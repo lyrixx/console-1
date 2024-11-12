@@ -866,47 +866,44 @@ class Application implements ResetInterface
     {
         do {
             $message = trim($e->getMessage());
-            if ('' === $message || OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+            if ('' === $message || $output->isVerbose()) {
                 $class = get_debug_type($e);
                 $title = sprintf('  [%s%s]  ', $class, 0 !== ($code = $e->getCode()) ? ' ('.$code.')' : '');
-                $len = Helper::width($title);
+                $maxLen = Helper::width($title);
             } else {
-                $len = 0;
+                $maxLen = 0;
             }
 
             if (str_contains($message, "@anonymous\0")) {
                 $message = preg_replace_callback('/[a-zA-Z_\x7f-\xff][\\\\a-zA-Z0-9_\x7f-\xff]*+@anonymous\x00.*?\.php(?:0x?|:[0-9]++\$)?[0-9a-fA-F]++/', fn ($m) => class_exists($m[0], false) ? (get_parent_class($m[0]) ?: key(class_implements($m[0])) ?: 'class').'@anonymous' : $m[0], $message);
             }
 
-            $width = $this->terminal->getWidth() ? $this->terminal->getWidth() - 1 : \PHP_INT_MAX;
+            $termainWidth = $this->terminal->getWidth() ?? \PHP_INT_MAX;
             $lines = [];
             foreach ('' !== $message ? preg_split('/\r?\n/', $message) : [] as $line) {
-                foreach ($this->splitStringByWidth($line, $width - 4) as $line) {
-                    // pre-format lines to get the right string length
-                    $lineLength = Helper::width($line) + 4;
-                    $lines[] = [$line, $lineLength];
-
-                    $len = max($lineLength, $len);
-                }
+                $lineLength = Helper::width($line);
+                $maxLen = min($termainWidth, $lineLength);
+                $lineLength = $lineLength % $termainWidth;
+                $lines[] = [$line, $lineLength];
             }
 
             $messages = [];
-            if (!$e instanceof ExceptionInterface || OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+            if (!$e instanceof ExceptionInterface || $output->isVerbose()) {
                 $messages[] = sprintf('<comment>%s</comment>', OutputFormatter::escape(sprintf('In %s line %s:', basename($e->getFile()) ?: 'n/a', $e->getLine() ?: 'n/a')));
             }
-            $messages[] = $emptyLine = sprintf('<error>%s</error>', str_repeat(' ', $len));
-            if ('' === $message || OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
-                $messages[] = sprintf('<error>%s%s</error>', $title, str_repeat(' ', max(0, $len - Helper::width($title))));
+            $messages[] = $emptyLine = sprintf('<error>%s</error>', str_repeat(' ', $maxLen));
+            if ('' === $message || $output->isVerbose()) {
+                $messages[] = sprintf('<error>%s%s</error>', $title, str_repeat(' ', $maxLen - Helper::width($title)));
             }
             foreach ($lines as $line) {
-                $messages[] = sprintf('<error>  %s  %s</error>', OutputFormatter::escape($line[0]), str_repeat(' ', $len - $line[1]));
+                $messages[] = sprintf('<error>%s%s</error>', OutputFormatter::escape($line[0]), str_repeat(' ', $maxLen - $line[1]));
             }
             $messages[] = $emptyLine;
             $messages[] = '';
 
             $output->writeln($messages, OutputInterface::VERBOSITY_QUIET);
 
-            if (OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+            if ($output->isVerbose()) {
                 $output->writeln('<comment>Exception trace:</comment>', OutputInterface::VERBOSITY_QUIET);
 
                 // exception related properties
